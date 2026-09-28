@@ -14,6 +14,14 @@
 
 LOCAL_PATH := $(call my-dir)
 
+# Samsung Exynos bootloaders expect the legacy DTBH blob in the dt_size field
+# of the v0 boot image header. The platform mkbootimg treats that field as the
+# boot header version, so use Samsung's DTBH-aware writer for boot and recovery.
+DTBH_MKBOOTIMG := $(HOST_OUT_EXECUTABLES)/mkdtbhbootimg$(HOST_EXECUTABLE_SUFFIX)
+
+DTBH_IMAGE_ARGS :=
+DTBH_IMAGE_DEPS :=
+
 ifeq ($(strip $(BOARD_KERNEL_SEPARATED_DT)),true)
 ifneq ($(strip $(BOARD_KERNEL_PREBUILT_DT)),true)
 ifeq ($(strip $(BUILD_TINY_ANDROID)),true)
@@ -54,6 +62,9 @@ $(INSTALLED_DTIMAGE_TARGET): $(DTBTOOL) $(INSTALLED_KERNEL_TARGET)
 	$(build-dtimage-target)
 	@echo "Made DT image: $@"
 
+DTBH_IMAGE_ARGS := --dt $(INSTALLED_DTIMAGE_TARGET)
+DTBH_IMAGE_DEPS := $(INSTALLED_DTIMAGE_TARGET)
+
 .PHONY: dtimage
 dtimage: $(INSTALLED_DTIMAGE_TARGET)
 
@@ -62,25 +73,26 @@ endif
 
 ifeq ($(strip $(TARGET_NEEDS_LOKI)),true)
 LOKI_TOOL := loki_tool
-else
-LOKI_TOOL := echo
-TARGET_LOKI_ABOOT_IMAGE :=
 endif
 
-$(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES) $(BOOTIMAGE_EXTRA_DEPS) $(INSTALLED_KERNEL_TARGET)
+$(INSTALLED_BOOTIMAGE_TARGET): $(DTBH_MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES) $(BOOTIMAGE_EXTRA_DEPS) $(INSTALLED_KERNEL_TARGET) $(DTBH_IMAGE_DEPS)
 	$(call pretty,"Target boot image: $@")
-	$(hide) $(MKBOOTIMG) --kernel $(call bootimage-to-kernel,$(1)) $(INTERNAL_BOOTIMAGE_ARGS) $(INTERNAL_MKBOOTIMG_VERSION_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $@
+	$(hide) $(DTBH_MKBOOTIMG) --kernel $(call bootimage-to-kernel,$(1)) $(INTERNAL_BOOTIMAGE_ARGS) $(BOARD_MKBOOTIMG_ARGS) $(DTBH_IMAGE_ARGS) --output $@
 	$(hide) echo -n "SEANDROIDENFORCE" >> $@
+ifeq ($(strip $(TARGET_NEEDS_LOKI)),true)
 	$(hide) $(LOKI_TOOL) patch boot $(TARGET_LOKI_ABOOT_IMAGE) $@ $@.lok
-	$(hide) cp $@.lok $@ || true
+	$(hide) cp $@.lok $@
+endif
 	$(hide) $(call assert-max-image-size,$@,$(BOARD_BOOTIMAGE_PARTITION_SIZE),raw)
 	@echo "Made boot image: $@"
 
-$(INSTALLED_RECOVERYIMAGE_TARGET): $(MKBOOTIMG) $(recovery_ramdisk) $(recovery_kernel) $(RECOVERYIMAGE_EXTRA_DEPS)
+$(INSTALLED_RECOVERYIMAGE_TARGET): $(DTBH_MKBOOTIMG) $(recovery_ramdisk) $(recovery_kernel) $(RECOVERYIMAGE_EXTRA_DEPS) $(DTBH_IMAGE_DEPS)
 	@echo "----- Making recovery image ------"
-	$(hide) $(MKBOOTIMG) $(INTERNAL_RECOVERYIMAGE_ARGS) $(INTERNAL_MKBOOTIMG_VERSION_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $@
+	$(hide) $(DTBH_MKBOOTIMG) $(INTERNAL_RECOVERYIMAGE_ARGS) $(BOARD_MKBOOTIMG_ARGS) $(DTBH_IMAGE_ARGS) --output $@
 	$(hide) echo -n "SEANDROIDENFORCE" >> $@
+ifeq ($(strip $(TARGET_NEEDS_LOKI)),true)
 	$(hide) $(LOKI_TOOL) patch recovery $(TARGET_LOKI_ABOOT_IMAGE) $@ $@.lok
-	$(hide) cp $@.lok $@ || true
+	$(hide) cp $@.lok $@
+endif
 	$(hide) $(call assert-max-image-size,$@,$(BOARD_RECOVERYIMAGE_PARTITION_SIZE),raw)
 	@echo "Made recovery image: $@"

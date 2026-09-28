@@ -6,6 +6,7 @@
 
 cc_binary {
     name: "android.hardware.biometrics.fingerprint-service.samsung",
+    compile_multilib: "32",
     relative_install_path: "hw",
     init_rc: ["android.hardware.biometrics.fingerprint-service.samsung.rc"],
     vintf_fragments: ["android.hardware.biometrics.fingerprint-service.samsung.xml"],
